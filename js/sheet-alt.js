@@ -10,23 +10,52 @@
    ============================================================ */
 
 (function(){
+  /* Rollenspezifische getrennte Bögen (Solo/Medtech). */
   var ALT_ROLES = ["solo", "medtech"];
-  var _current = null; // {role, data, els, root}
+  /* Alle eingebetteten Bogen-Designs. "standard" passt zu jeder Rolle. */
+  var ALT_KEYS = ["solo", "medtech", "standard"];
+  var _current = null; // {role, key, data, els, root}
+
+  /* Je Bogen unterschiedliche Feldnummern (Rüstungszeilen, SPEC-Box). */
+  var ALT_SHEET_CONF = {
+    solo:     { armor:{head:2,body:1,shield:4}, specOrder:[2,1,4,3,6,5,8] },
+    medtech:  { armor:{head:2,body:1,shield:4}, specOrder:[2,1,4,3,6,5,8] },
+    standard: { armor:{head:1,body:2,shield:3}, specOrder:[1,2,3,4,5,6,7] }
+  };
 
   /* ---------- Helfer ---------- */
   function altBase(n){ return String(n).replace(/\s*\(.*\)\s*$/,""); }
   function altParens(n){ const m=String(n).match(/\(([^)]*)\)\s*$/); return m?m[1]:null; }
   function altHas(obj, key){ return Object.prototype.hasOwnProperty.call(obj, key); }
-  function altRoleAvailable(role){
-    return ALT_ROLES.indexOf(role)>=0 &&
-      !!(window.CPR_ALT_SHEETS && window.CPR_ALT_SHEETS[role]);
+  function altHasSheet(key){
+    return ALT_KEYS.indexOf(key)>=0 &&
+      !!(window.CPR_ALT_SHEETS && window.CPR_ALT_SHEETS[key]);
   }
-  function altGetData(role){
-    return altRoleAvailable(role) ? window.CPR_ALT_SHEETS[role] : null;
+  function altRoleAvailable(role){
+    return ALT_ROLES.indexOf(role)>=0 && altHasSheet(role);
+  }
+  /* Welche Designs stehen für diese Rolle zur Auswahl? */
+  function altKeysForRole(role){
+    const out=[];
+    if(altRoleAvailable(role)) out.push(role);
+    if(altHasSheet("standard")) out.push("standard");
+    return out;
+  }
+  /* Design ("alt"/"standard") -> konkreter Bogen-Schlüssel. */
+  function altKeyForRole(role, design){
+    if(design==="standard") return altHasSheet("standard") ? "standard" : null;
+    if(altRoleAvailable(role)) return role;
+    return altHasSheet("standard") ? "standard" : null;
+  }
+  function altGetData(key){
+    return altHasSheet(key) ? window.CPR_ALT_SHEETS[key] : null;
   }
 
   CPR.altSheetRoles = ALT_ROLES.slice();
   CPR.altSheetAvailable = altRoleAvailable;
+  CPR.hasAltSheet = altHasSheet;
+  CPR.altSheetKeys = altKeysForRole;
+  CPR.altSheetKeyFor = altKeyForRole;
 
   /* ---------- Skill-Felder des alternativen Bogens ---------- */
   var ALT_SKILL_PREFIX = {
@@ -125,22 +154,41 @@
   };
 
   /* ---------- Werte aus dem State ---------- */
-  CPR.altSheetValues = function(role, dvOverride){
-    const data = altGetData(role);
+  CPR.altSheetValues = function(role, dvOverride, sheetKey){
+    const key = sheetKey || altKeyForRole(role, "alt");
+    const data = altGetData(key);
     if(!data) return null;
     const dv = dvOverride!=null ? dvOverride : (typeof derived==="function" ? derived() : null);
     const fields = data.fields || [];
     const names = Object.create(null);
     fields.forEach(f=>{ names[f.name]=true; });
     const has = n=>!!names[n];
+    const conf = ALT_SHEET_CONF[key] || {};
     const stat = S.stats || {};
+
+    /* Der Standard-Bogen schreibt viele Felder ohne "1"-Suffix
+       (NAME statt NAME1), COST1 statt COST 1 und initiative klein. */
+    const resolve = (n)=>{
+      if(has(n)) return n;
+      if(n==="INITIATIVE1" && has("initiative")) return "initiative";
+      const m = String(n).match(/^COST (\d+)$/);
+      if(m && has("COST"+m[1])) return "COST"+m[1];
+      if(/1$/.test(n)){
+        const base = n.slice(0,-1);
+        if(has(base)) return base;
+      }
+      return null;
+    };
 
     const V = {}, CHECKS = [], WARNS = [];
     const warn = m=>WARNS.push(m);
     const set = (f,v)=>{
-      if(v==null || v==="" || !has(f)) return;
-      V[f] = String(v);
+      if(v==null || v==="" ) return;
+      const n = resolve(f);
+      if(!n) return;
+      V[n] = String(v);
     };
+    const check = (f)=>{ const n=resolve(f); if(n) CHECKS.push(n); };
 
     /* --- Identität / Kampfwerte --- */
     set("NAME1", S.name);
@@ -148,6 +196,7 @@
     set("RANK1", S.roleAbility!=null ? S.roleAbility : 4);
     const roleDef = S.role ? CPR.ROLES[S.role] : null;
     set("ROLE ABILITY DESCRIPTION1", roleDef ? roleDef.ra : "");
+    if(roleDef) set("role", roleDef.name);
     if(dv){
       set("HP LEFT1", dv.hp);
       set("HP RIGHT1", dv.hp);
@@ -234,9 +283,9 @@
       }
     });
 
-    /* Freie "Specialised Skills"-Box. Die Feldnummern sind im Bogen
-       nicht in optischer Reihenfolge (2,1,4,3,6,5,8 – eine 7 fehlt). */
-    const SPEC_ROWS = [2,1,4,3,6,5,8];
+    /* Freie "Specialised Skills"-Box. Die Feldnummern sind je Bogen
+       unterschiedlich (Solo: 2,1,4,3,6,5,8 – Standard: 1..7). */
+    const SPEC_ROWS = conf.specOrder || [2,1,4,3,6,5,8];
     specials.slice(0,SPEC_ROWS.length).forEach((r,i)=>{
       const n = SPEC_ROWS[i];
       set("SPEC SKILL NAME "+n, r.name);
@@ -261,12 +310,14 @@
       });
     }
 
-    /* --- Rüstung (Bogenzeilen: HEAD=2, BODY=1, SHIELD=4) --- */
+    /* --- Rüstung (Zeilen je Bogen: Solo/Medtech HEAD=2, BODY=1, SHIELD=4;
+       Standard HEAD=1, BODY=2, SHIELD=3) --- */
     if(typeof spArmor==="function"){
       const ar = spArmor();
-      if(ar.head){ set("ARMOR 2",ar.head.name); set("SP 2",ar.head.sp); set("PENALTY 2",ar.head.pen); }
-      if(ar.body){ set("ARMOR 1",ar.body.name); set("SP 1",ar.body.sp); set("PENALTY 1",ar.body.pen); }
-      if(ar.shield){ set("ARMOR 4",ar.shield.name); set("SP 4",ar.shield.sp); set("PENALTY 4",ar.shield.pen); }
+      const rows = conf.armor || {head:2,body:1,shield:4};
+      if(ar.head){ set("ARMOR "+rows.head,ar.head.name); set("SP "+rows.head,ar.head.sp); set("PENALTY "+rows.head,ar.head.pen); }
+      if(ar.body){ set("ARMOR "+rows.body,ar.body.name); set("SP "+rows.body,ar.body.sp); set("PENALTY "+rows.body,ar.body.pen); }
+      if(ar.shield){ set("ARMOR "+rows.shield,ar.shield.name); set("SP "+rows.shield,ar.shield.sp); set("PENALTY "+rows.shield,ar.shield.pen); }
     }
 
     /* --- Gear / Fashion / Ammo / Cash --- */
@@ -362,7 +413,6 @@
     }
 
     /* --- Cyberware --- */
-    const cy = altCyberRows(warn);
     const byName = Object.create(null);
     fields.forEach(f=>{ byName[f.name]=true; });
     const seq = (prefix)=>{
@@ -373,6 +423,11 @@
       }
       return out;
     };
+    const cy = altCyberRows(warn, {
+      reye: seq("CYBERERE R").length,
+      rarm: seq("CYBERARM R").length,
+      rleg: seq("CYBERLEG R").length
+    });
     const fillCat = (list, nameFields, dataFields, label)=>{
       list.slice(0,nameFields.length).forEach((it,i)=>{
         const d = it.def || {};
@@ -400,24 +455,24 @@
     fillCat(cy.ec,    seq("EXTERNAL"), seq("EXTERNAL  DATA"), "External Cyberware");
     fillCat(cy.borg,  seq("BORWARE"), seq("BORWARE DATA"), "Borgware");
 
-    if(cy.links>=1) CHECKS.push("NEURALINK CHECK1");
-    if(cy.suites>=1) CHECKS.push("CYBERAUDIO CHECK1");
-    if(cy.eyes>=1) CHECKS.push("CYBEREYE R CHECK1");
-    if(cy.eyes>=2) CHECKS.push("CYBEREYE L CHECK1");
-    if(cy.arms>=1) CHECKS.push("CYBERARM R CHECK1");
-    if(cy.arms>=2) CHECKS.push("CYBERARM L CHECK1");
-    if(cy.legs>=1) CHECKS.push("CYBERLEG R CHECK1");
-    if(cy.legs>=2) CHECKS.push("CYBERLEG L CHECK1");
-    if(cy.ic.length) CHECKS.push("INTERNAL CHECK1");
-    if(cy.ec.length) CHECKS.push("EXTERNAL CHECK1");
-    if(cy.borg.length) CHECKS.push("BORGWARE CHECK1");
-    if(cy.fw.length) CHECKS.push("FASHIONWARE CHECK1");
+    if(cy.links>=1) check("NEURALINK CHECK1");
+    if(cy.suites>=1) check("CYBERAUDIO CHECK1");
+    if(cy.eyes>=1) check("CYBEREYE R CHECK1");
+    if(cy.eyes>=2) check("CYBEREYE L CHECK1");
+    if(cy.arms>=1) check("CYBERARM R CHECK1");
+    if(cy.arms>=2) check("CYBERARM L CHECK1");
+    if(cy.legs>=1) check("CYBERLEG R CHECK1");
+    if(cy.legs>=2) check("CYBERLEG L CHECK1");
+    if(cy.ic.length) check("INTERNAL CHECK1");
+    if(cy.ec.length) check("EXTERNAL CHECK1");
+    if(cy.borg.length) check("BORGWARE CHECK1");
+    if(cy.fw.length) check("FASHIONWARE CHECK1");
 
     return {values:V, checks:CHECKS, warns:WARNS};
   };
 
   /* ---------- Cyberware auf die Bogen-Kategorien verteilen ---------- */
-  function altCyberRows(warn){
+  function altCyberRows(warn, caps){
     const rows = {fw:[],nlink:[],audio:[],reye:[],leye:[],rarm:[],larm:[],rleg:[],lleg:[],ic:[],ec:[],borg:[]};
     let links=0, eyes=0, arms=0, legs=0, suites=0;
     const items = [];
@@ -464,7 +519,7 @@
 
     ["reye","rarm","rleg"].forEach(k=>{
       const to = k.replace(/^r/,"l");
-      const cap = 4; /* der Bogen bietet mindestens 4 Zeilen je Seite */
+      const cap = Math.max(1, (caps && caps[k]) || 4);
       if(rows[k].length>cap){
         const overflow = rows[k].slice(cap);
         rows[k] = rows[k].slice(0,cap);
@@ -477,10 +532,11 @@
   }
 
   /* ---------- Renderer ---------- */
-  CPR.renderAltSheet = function(container, role){
-    const data = altGetData(role);
+  CPR.renderAltSheet = function(container, role, sheetKey){
+    const key = sheetKey || altKeyForRole(role, "alt");
+    const data = altGetData(key);
     if(!data) return null;
-    const res = CPR.altSheetValues(role);
+    const res = CPR.altSheetValues(role, null, key);
     const values = res ? res.values : {};
     const checks = res ? res.checks : [];
     const calcTargets = Object.create(null);
@@ -551,8 +607,8 @@
     /* Berechnungen des Bogens (SUM/PRD) ausführen */
     altRecalc(data, els, values);
 
-    _current = {role:role, data:data, els:els, root:root};
-    return {values:values, checks:checks, warns:res?res.warns:[], root:root, els:els};
+    _current = {role:role, key:key, data:data, els:els, root:root};
+    return {values:values, checks:checks, warns:res?res.warns:[], root:root, els:els, key:key};
   };
 
   function altRecalc(data, els, fixed){
@@ -585,10 +641,11 @@
   }
 
   /* Werte inkl. nachgerechneter SUM/PRD-Felder (fuer den PDF-Export) */
-  CPR.altSheetAllValues = function(role){
-    const data = altGetData(role);
+  CPR.altSheetAllValues = function(role, sheetKey){
+    const key = sheetKey || altKeyForRole(role, "alt");
+    const data = altGetData(key);
     if(!data) return null;
-    const res = CPR.altSheetValues(role) || {values:{},checks:[],warns:[]};
+    const res = CPR.altSheetValues(role, null, key) || {values:{},checks:[],warns:[]};
     const els = Object.create(null);
     data.fields.forEach(f=>{
       if(f.type==="checkbox"){
@@ -606,16 +663,17 @@
       else if(f.type==="text" || f.type==="textarea")
         values[f.name] = {value: String(els[f.name].value==null?"":els[f.name].value)};
     });
-    return {data:data, values:values, checks:res.checks, warns:res.warns};
+    return {data:data, values:values, checks:res.checks, warns:res.warns, key:key};
   };
 
   /* Aktuelle Bogenwerte als JSON (ohne berechnete Felder) */
-  CPR.altSheetCurrentJSON = function(role){
-    const data = altGetData(role);
+  CPR.altSheetCurrentJSON = function(role, sheetKey){
+    const key = sheetKey || altKeyForRole(role, "alt");
+    const data = altGetData(key);
     if(!data) return null;
-    const cur = _current && _current.role===role ? _current : null;
+    const cur = _current && _current.role===role && _current.key===key ? _current : null;
     if(!cur){
-      const res = CPR.altSheetValues(role);
+      const res = CPR.altSheetValues(role, null, key);
       return res ? res.values : {};
     }
     const calcTargets = Object.create(null);

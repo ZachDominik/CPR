@@ -45,19 +45,22 @@ den offiziellen `RTG-CPR-CharacterSheet-Fillable.pdf` (in `js/sheet-pdf-b64.js`
 eingebettet), befüllt alle passenden Formularfelder per `pdf-lib` und lädt
 das fertige PDF herunter – ebenfalls **komplett offline**.
 
-**🎨 Alternativer Bogen (getrennt):** Für **Solo** und **Medtech** bietet der
-Bogen-Screen zusätzlich das Design „Cyberpunk-Sheet (getrennt)“ (Quelle:
-`cyberpunk_sheets_getrennt/`). Er wird direkt aus dem Charakterzustand im
-Browser gerendert (Original-Hintergründe + Formularfelder, inkl.
-nachgerechneter BASE/SUM-Werte und Checkboxen) und kann gedruckt (Querformat,
-„Hintergrundgrafiken“ aktivieren) oder als JSON exportiert werden. Über
-**„📄 PDF (ausfüllbar)“** erzeugt derselbe Screen außerdem ein echtes
-AcroForm-PDF mit denselben Hintergründen und Formularfeldern – bereits
-vorbefüllt, aber am PC weiter bearbeitbar. Auch dieses Design funktioniert
-**komplett offline**; die Felddaten liegen eingebettet in
-`js/sheet-alt-data.js`, die Hintergrundbilder in `js/sheet-alt-bg-b64.js`.
-Für die übrigen acht Rollen bleibt nur der offizielle RTG-Bogen verfügbar
-(mit Hinweis in der Design-Auswahl).
+**🎨 Getrennte Bögen:** Der Bogen-Screen bietet zusätzlich zwei Designs aus
+`cyberpunk_sheets_getrennt/` und `cyberpunk_standard_sheet_getrennt/`:
+
+- **Cyberpunk-Sheet (getrennt)** – rollenspezifisch für **Solo** und **Medtech**.
+- **Standard-Sheet (getrennt)** – der generische Bogen, verfügbar für **alle
+  zehn Rollen** (auch zusätzlich für Solo/Medtech).
+
+Beide werden direkt aus dem Charakterzustand im Browser gerendert
+(Original-Hintergründe + Formularfelder, inkl. nachgerechneter BASE/SUM-Werte
+und Checkboxen) und können gedruckt (Querformat, „Hintergrundgrafiken“
+aktivieren) oder als JSON exportiert werden. Über **„📄 PDF (ausfüllbar)“**
+erzeugt derselbe Screen außerdem ein echtes AcroForm-PDF mit denselben
+Hintergründen und Formularfeldern – bereits vorbefüllt, aber am PC weiter
+bearbeitbar. Auch diese Designs funktionieren **komplett offline**; die
+Felddaten liegen eingebettet in `js/sheet-alt-data.js`, die Hintergrundbilder
+in `js/sheet-alt-bg-b64.js`.
 
 Was wohin gefüllt wird:
 
@@ -72,7 +75,7 @@ Was wohin gefüllt wird:
   Sammelzeile, Gear (max. 18 Zeilen), Cash = Restbudget je Methode.
 - Kompletter Lifepath (Persönlichkeit, Stil, Werte, Familie, Freunde/Feinde/
   Liebschaften, Ziele) + Rollen-Lifepath, Housing/Rent/Lifestyle.
-- Cyberware-Seite 3: Verteilung nach Kategorie auf die Bogenzeilen
+- Cyberware-Bereich: Verteilung nach Kategorie auf die Bogenzeilen
   (Fashionware FW1–7, Neuralware, Optics/Audio je Seite, Limbs je Seite,
   Internal/External/Borgware), Foundational-Häkchen (Link/Audio/Eye/Arm/Leg),
   Überlauf rechts → links.
@@ -91,22 +94,24 @@ js/lifepath.js    – Lifepath-Tabellen S. 45–69 (allgemein + alle 10 Rollen)
 js/app.js         – komplette Logik (Flow, Budgets, Validierung, Bogen)
 js/sheet-pdf.js   – Mapping State → RTG-Bogen-Felder + PDF-Befüllung
 js/sheet-pdf-b64.js – der offizielle RTG-Bogen als Base64 (~1,9 MB)
-js/sheet-alt.js   – Mapping State → alternativer Bogen (Solo/Medtech) + Rendering
+js/sheet-alt.js   – Mapping State → getrennte Bögen (Solo/Medtech/Standard) + Rendering
 js/sheet-alt-data.js – Feld-/Seiten-/Berechnungsdaten der getrennten Bögen (eingebettet)
 js/sheet-alt-bg-b64.js – Hintergrundseiten der getrennten Bögen als JPEG/Base64
 js/sheet-alt-pdf.js – erzeugt daraus ein vorbefülltes, ausfüllbares AcroForm-PDF
 js/vendor/pdf-lib.min.js – pdf-lib 1.17.1 (MIT), UMD-Bundle, offline
-test-harness.html – 85 automatisierte Tests (Regressionsschutz)
+cyberpunk_sheets_getrennt/ – Quelldaten Solo/Medtech (Bilder + Feld-JSON)
+cyberpunk_standard_sheet_getrennt/ – Quelldaten Standard-Sheet (Bilder + Feld-JSON)
+test-harness.html – 92 automatisierte Tests (Regressionsschutz)
 ```
 
 ## Tests
 
-`test-harness.html` im Browser öffnen – die 85 Tests laufen automatisch
+`test-harness.html` im Browser öffnen – die 92 Tests laufen automatisch
 (alle drei Methoden komplett, Budgetrechnungen, Humanity, Preset-Auswahl,
 Shop-Käufe, Save/Load, PDF-Feld-Mapping inkl. eingebettetem Bogen sowie
-alternativer Solo-/Medtech-Bogen inkl. Verfügbarkeits-Fallback und
-PDF-Erzeugung). Kopfzeile muss am Ende **„85 PASS / 0 FAIL“** zeigen.
-Headless-Check (PDF-Erzeugung braucht etwas Zeit):
+alternativer Solo-/Medtech-Bogen und Standard-Sheet für alle Rollen inkl.
+Verfügbarkeits-Fallback und PDF-Erzeugung). Kopfzeile muss am Ende
+**„92 PASS / 0 FAIL“** zeigen. Headless-Check (PDF-Erzeugung braucht etwas Zeit):
 
 ```powershell
 & "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new `

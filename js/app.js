@@ -43,7 +43,7 @@ function freshState(method){
     presetChoices:{weapons:{},outfit:{},cyber:{}}, // Index der „oder“-Wahl
     buys:[], // Einkäufe {cat,name,cost,qty,loc,hl,slots,req,cyber}
     sellSoul:false, soulEmployer:null,
-    sheetDesign:"official", // "official" (RTG-PDF) | "alt" (cyberpunk_sheets_getrennt)
+    sheetDesign:"official", // "official" (RTG-PDF) | "alt" (rollenspezifisch) | "standard"
     step:"start", visited:{}
   };
 }
@@ -1521,22 +1521,32 @@ function sheetEquipmentHTML(){
 
 /* ---------- Bogen-Design wählen (offiziell vs. cyberpunk_sheets_getrennt) ---------- */
 function altSheetAvailable(){ return typeof CPR.altSheetAvailable==="function" && CPR.altSheetAvailable(S.role); }
+function standardSheetAvailable(){ return typeof CPR.hasAltSheet==="function" && CPR.hasAltSheet("standard"); }
+/* Konkreter Bogen-Schlüssel für das aktuell gewählte Design ("solo"|"medtech"|"standard"). */
+function currentAltSheetKey(){
+  if(typeof CPR.altSheetKeyFor!=="function") return null;
+  if(S.sheetDesign==="standard") return standardSheetAvailable() ? "standard" : null;
+  if(S.sheetDesign==="alt") return altSheetAvailable() ? CPR.altSheetKeyFor(S.role,"alt") : null;
+  return null;
+}
 function sheetDesignPanel(){
   const alt = altSheetAvailable();
-  const chosen = S.sheetDesign==="alt" && alt ? "alt" : "official";
+  const std = standardSheetAvailable();
+  const chosen = currentAltSheetKey();
+  const roleKey = alt ? CPR.altSheetKeyFor(S.role,"alt") : null;
   return `
     <div class="panel noprint" id="sheet-design">
       <h2>Bogen-Design</h2>
       <div class="radio-line">
-        <label><input type="radio" name="sheetdesign" value="official" ${chosen==="official"?"checked":""}>
+        <label><input type="radio" name="sheetdesign" value="official" ${!chosen?"checked":""}>
           📄 Offizieller RTG-Bogen (PDF)</label>
-        ${alt?`<label><input type="radio" name="sheetdesign" value="alt" ${chosen==="alt"?"checked":""}>
-          🎨 Cyberpunk-Sheet (getrennt)</label>`
-        :`<label class="dim" title="Für diese Rolle liegt kein getrennter Bogen vor">
-          🎨 Cyberpunk-Sheet (getrennt) – nur für Solo &amp; Medtech</label>`}
+        ${alt?`<label><input type="radio" name="sheetdesign" value="alt" ${chosen===roleKey?"checked":""}>
+          🎨 Cyberpunk-Sheet (getrennt)</label>`:""}
+        ${std?`<label><input type="radio" name="sheetdesign" value="standard" ${chosen==="standard"?"checked":""}>
+          🎨 Standard-Sheet (getrennt)</label>`:""}
       </div>
       <p class="dim">Der offizielle RTG-Bogen wird als befüllbares PDF heruntergeladen;
-      das Cyberpunk-Sheet wird direkt hier vorbelegt und gedruckt.</p>
+      die getrennten Designs werden direkt hier vorbelegt und gedruckt.</p>
     </div>`;
 }
 function bindSheetDesign(){
@@ -1545,8 +1555,9 @@ function bindSheetDesign(){
   });
 }
 function renderSheet(){
-  if(!altSheetAvailable()) S.sheetDesign="official";
-  if(S.sheetDesign==="alt"){ renderAltSheetScreen(); return; }
+  const altKey=currentAltSheetKey();
+  if(S.sheetDesign!=="official" && !altKey) S.sheetDesign="official";
+  if(altKey){ renderAltSheetScreen(altKey); return; }
   const dv=derived();
   const role=S.role?CPR.ROLES[S.role]:{name:"–",ability:"–",ra:""};
   const ls=S.role==="exec"?CPR.LIFESTYLE.exec:CPR.LIFESTYLE.default;
@@ -1657,7 +1668,9 @@ function renderSheet(){
 }
 
 /* ---------- Alternativer Bogen (cyberpunk_sheets_getrennt) ---------- */
-function renderAltSheetScreen(){
+function renderAltSheetScreen(key){
+  key = key || currentAltSheetKey() || "standard";
+  const designName = key==="standard" ? "Standard-Sheet (getrennt)" : "Cyberpunk-Sheet (getrennt)";
   const role=S.role?CPR.ROLES[S.role]:{name:"–"};
   $("#sheet-content").innerHTML=`
   <div class="sheet alt-sheet-screen">
@@ -1665,7 +1678,7 @@ function renderAltSheetScreen(){
     ${sheetDesignPanel()}
     <div class="panel noprint">
       <p><b>${esc(role.name)}</b> · ${esc(methodLabel(S.method))} · Design:
-        <b>Cyberpunk-Sheet (getrennt)</b></p>
+        <b>${esc(designName)}</b></p>
       <div class="btn-row">
         <button class="btn btn-primary" id="btn-alt-print" type="button">🖨 Drucken</button>
         <button class="btn" id="btn-alt-pdf" type="button">📄 PDF (ausfüllbar)</button>
@@ -1680,7 +1693,7 @@ function renderAltSheetScreen(){
 
   bindSheetDesign();
   const host=$("#alt-sheet-host");
-  const res=CPR.renderAltSheet(host, S.role);
+  const res=CPR.renderAltSheet(host, S.role, key);
   if(res&&res.warns&&res.warns.length) console.warn("[sheet-alt]",res.warns);
 
   $("#btn-alt-print").addEventListener("click",()=>window.print());
@@ -1689,15 +1702,15 @@ function renderAltSheetScreen(){
     if(btn.disabled) return;
     const label=btn.textContent;
     btn.disabled=true; btn.textContent="⏳ PDF wird erzeugt …";
-    try{ await CPR.downloadAltSheetPDF(S.role); }
+    try{ await CPR.downloadAltSheetPDF(S.role, key); }
     finally{ btn.disabled=false; btn.textContent=label; }
   });
   $("#btn-alt-json").addEventListener("click",()=>{
-    const data=CPR.altSheetCurrentJSON(S.role);
+    const data=CPR.altSheetCurrentJSON(S.role, key);
     const blob=new Blob([JSON.stringify(data,null,1)],{type:"application/json"});
     const a=document.createElement("a");
     a.href=URL.createObjectURL(blob);
-    a.download=`${(S.name||"charakter")}-${S.role}-bogen.json`.toLowerCase()
+    a.download=`${(S.name||"charakter")}-${S.role}-${key}-bogen.json`.toLowerCase()
       .replace(/[^a-z0-9äöüß.\-]+/gi,"-");
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
@@ -1713,7 +1726,7 @@ function init(){
   S.presetChoices=S.presetChoices||{weapons:{},outfit:{},cyber:{}};
   S.buys=S.buys||[]; S.skills=S.skills||{}; S.skillChoices=S.skillChoices||{};
   S.lp=S.lp||{}; S.visited=S.visited||{}; S.stats=S.stats||{};
-  S.sheetDesign=S.sheetDesign==="alt"?"alt":"official";
+  S.sheetDesign=(S.sheetDesign==="alt"||S.sheetDesign==="standard")?S.sheetDesign:"official";
   $("#btn-dicelog").addEventListener("click",()=>$("#dicelog").classList.toggle("hidden"));
   $("#btn-dicelog-close").addEventListener("click",()=>$("#dicelog").classList.add("hidden"));
   $("#btn-reset").addEventListener("click",()=>{

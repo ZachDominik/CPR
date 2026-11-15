@@ -444,6 +444,49 @@
     if(!!document.querySelector("#btn-pdf")&&!document.querySelector("#alt-sheet-host"))
       ok("Alt: Fallback auf offiziellen Bogen");
     else fail("Alt Fallback");
+
+    /* 12e. Standard-Sheet (getrennt) fuer alle uebrigen Rollen */
+    if(typeof CPR.hasAltSheet==="function" && CPR.hasAltSheet("standard")
+      && CPR.altSheetKeys("netrunner").indexOf("standard")>=0
+      && CPR.altSheetKeys("solo").indexOf("solo")>=0
+      && CPR.altSheetKeys("solo").indexOf("standard")>=0)
+      ok("Standard-Sheet: fuer alle Rollen verfuegbar");
+    else fail("Standard-Sheet-Verfuegbarkeit");
+    if(window.CPR_ALT_BG&&CPR_ALT_BG.standard&&CPR_ALT_BG.standard.length===3)
+      ok("Standard-Sheet: Hintergrundbilder eingebettet");
+    else fail("Standard-Sheet Hintergruende fehlen");
+    S=freshState("complete"); S.role="netrunner"; S.name="Kiro"; S.handle="K";
+    S.culturalLang="Japanese";
+    S.stats={INT:8,REF:7,DEX:7,TECH:8,COOL:5,WILL:6,LUCK:5,MOVE:6,BODY:5,EMP:6};
+    S.skills={"Athletics":2,"Brawling":2,"Concentration":6,"Conversation":2,"Education":2,
+      "Evasion":2,"First Aid":2,"Human Perception":2,"Language (Streetslang)":2,
+      "Local Expert (Your Home)":2,"Perception":2,"Persuasion":2,"Stealth":2};
+    S.lpDone=true; S.skillsDone=true; S.shopDone=true;
+    const stdRes=CPR.altSheetValues("netrunner", null, "standard");
+    if(stdRes&&stdRes.values.NAME==="Kiro"&&stdRes.values["CON BASE"]===String(6+6))
+      ok("Standard-Sheet: Werte (NAME/Skill-BASE)");
+    else fail("Standard-Werte: "+(stdRes?stdRes.values.NAME+" / "+stdRes.values["CON BASE"]:"-"));
+    S.sheetDesign="standard"; go("sheet");
+    const stdNameEl=document.querySelector('#alt-sheet-host input[name="NAME"]');
+    if(document.querySelectorAll("#alt-sheet-host .alt-page").length===3
+      && stdNameEl&&stdNameEl.value==="Kiro")
+      ok("Standard-Sheet: 3 Seiten gerendert + NAME");
+    else fail("Standard-Render");
+    if($("#sheet-content").innerHTML.indexOf("Standard-Sheet (getrennt)")>=0
+      &&!!document.querySelector("#btn-alt-pdf"))
+      ok("Standard-Sheet: Design-Auswahl + PDF-Button");
+    else fail("Standard-Design-Auswahl fehlt");
+    const stdPdf=await CPR.buildAltSheetPDF("netrunner","standard");
+    if(stdPdf.pages===3&&stdPdf.fields>=700&&stdPdf.bytes.length>500000)
+      ok("Standard-PDF: "+stdPdf.pages+" Seiten, "+stdPdf.fields+" Felder, "+
+        Math.round(stdPdf.bytes.length/1024)+" KB");
+    else fail("Standard-PDF Build: "+stdPdf.pages+"/"+stdPdf.fields+"/"+stdPdf.bytes.length);
+    const stdPdfDoc=await PDFLib.PDFDocument.load(stdPdf.bytes);
+    const stdPdfForm=stdPdfDoc.getForm();
+    if(stdPdfForm.getTextField("NAME").getText()==="Kiro"
+      &&stdPdfForm.getTextField("CON BASE").getText()===String(6+6))
+      ok("Standard-PDF: NAME/BASE vorbefuellt");
+    else fail("Standard-PDF NAME/BASE");
     S.role="solo"; /* fuer Save/Load-Test unten */
 
     /* 13. Save/Load rundet */

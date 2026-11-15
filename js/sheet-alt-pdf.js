@@ -1,7 +1,7 @@
 "use strict";
 /* ============================================================
    sheet-alt-pdf.js – alternativer Bogen als ausfüllbares PDF
-   (Solo / Medtech, Hintergründe aus sheet-alt-bg-b64.js)
+   (Solo / Medtech / Standard, Hintergründe aus sheet-alt-bg-b64.js)
 
    Erzeugt mit pdf-lib ein echtes AcroForm-PDF: Hintergrundseiten
    plus Formularfelder an denselben Positionen wie im HTML-Bogen,
@@ -87,16 +87,18 @@
     widget.dict.set(PDFLib.PDFName.of("AP"), ap);
   }
 
-  async function buildAltSheetPDF(role){
+  async function buildAltSheetPDF(role, sheetKey){
     if(typeof PDFLib==="undefined" || !PDFLib.PDFDocument)
       throw new Error("pdf-lib ist nicht geladen.");
     if(typeof CPR.altSheetAllValues!=="function")
       throw new Error("sheet-alt.js ist nicht geladen.");
-    const all = CPR.altSheetAllValues(role);
+    const key = sheetKey || (typeof CPR.altSheetKeyFor==="function"
+      ? CPR.altSheetKeyFor(role, "alt") : role);
+    const all = CPR.altSheetAllValues(role, key);
     if(!all) throw new Error("Für diese Rolle gibt es keinen getrennten Bogen.");
 
     const data = all.data;
-    const backgrounds = (window.CPR_ALT_BG && window.CPR_ALT_BG[role]) || [];
+    const backgrounds = (window.CPR_ALT_BG && window.CPR_ALT_BG[key]) || [];
     const {PDFDocument, StandardFonts, PDFName, PDFBool} = PDFLib;
 
     const doc = await PDFDocument.create();
@@ -185,29 +187,30 @@
     }catch(e){}
 
     try{
-      doc.setTitle("Cyberpunk RED – "+role+" (getrennt)");
+      doc.setTitle("Cyberpunk RED – "+role+" ("+
+        (key==="standard" ? "Standard-Sheet" : key)+", getrennt)");
       doc.setCreator("Cyberpunk RED Charaktererschaffung");
       doc.setProducer("pdf-lib");
     }catch(e){}
 
     const bytes = await doc.save();
-    return {bytes:bytes, role:role, pages:data.pages.length,
+    return {bytes:bytes, role:role, key:key, pages:data.pages.length,
       fields:added, skipped:skipped};
   }
 
   CPR.buildAltSheetPDF = buildAltSheetPDF;
-  CPR.altSheetPDFBytes = async function(role){
-    return (await buildAltSheetPDF(role)).bytes;
+  CPR.altSheetPDFBytes = async function(role, sheetKey){
+    return (await buildAltSheetPDF(role, sheetKey)).bytes;
   };
 
-  CPR.downloadAltSheetPDF = async function(role){
+  CPR.downloadAltSheetPDF = async function(role, sheetKey){
     try{
       toast("📄 Ausfüllbares PDF wird erzeugt …");
-      const res = await buildAltSheetPDF(role);
+      const res = await buildAltSheetPDF(role, sheetKey);
       const blob = new Blob([res.bytes], {type:"application/pdf"});
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `${(S.name||"charakter")}-${role}-getrennt.pdf`.toLowerCase()
+      a.download = `${(S.name||"charakter")}-${role}-${res.key}-getrennt.pdf`.toLowerCase()
         .replace(/[^a-z0-9äöüß.\-]+/gi,"-");
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(a.href), 3000);
