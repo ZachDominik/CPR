@@ -44,6 +44,7 @@ function freshState(method){
     buys:[], // Einkäufe {cat,name,cost,qty,loc,hl,slots,req,cyber}
     sellSoul:false, soulEmployer:null,
     sheetDesign:"official", // "official" (RTG-PDF) | "alt" (rollenspezifisch) | "standard"
+    altSheetImports:{}, // je Bogen-Design eingelesene Bogenwerte (JSON)
     step:"start", visited:{}
   };
 }
@@ -1683,10 +1684,15 @@ function renderAltSheetScreen(key){
         <button class="btn btn-primary" id="btn-alt-print" type="button">🖨 Drucken</button>
         <button class="btn" id="btn-alt-pdf" type="button">📄 PDF (ausfüllbar)</button>
         <button class="btn" id="btn-alt-json" type="button">💾 Bogenwerte als JSON</button>
+        <button class="btn" id="btn-alt-import" type="button">📂 JSON einlesen</button>
+        ${CPR.altSheetHasImport(key)?`<button class="btn" id="btn-alt-import-reset" type="button">↺ Import verwerfen</button>`:""}
         <button class="btn" type="button" onclick="go('${S.method==="complete"?"shop":"equip"}')">◀ Zurück zum Einkauf</button>
       </div>
       <p class="dim">Tipp: Beim Drucken ggf. Querformat und „Hintergrundgrafiken“ aktivieren.
-        Das PDF enthält echte Formularfelder und lässt sich am PC weiter ausfüllen.</p>
+        Das PDF enthält echte Formularfelder und lässt sich am PC weiter ausfüllen.
+        „JSON einlesen“ akzeptiert die exportierten Bogenwerte (oder einen kompletten
+        Charakter-Export); eingelesene Werte haben Vorrang vor den berechneten.</p>
+      <input type="file" id="inp-alt-import" accept=".json,application/json" class="hidden">
     </div>
     <div id="alt-sheet-host"></div>
   </div>`;
@@ -1716,6 +1722,54 @@ function renderAltSheetScreen(key){
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
     toast("💾 Bogenwerte als JSON exportiert.");
   });
+  $("#btn-alt-import").addEventListener("click",()=>$("#inp-alt-import").click());
+  $("#inp-alt-import").addEventListener("change",ev=>{
+    const f=ev.target.files[0];
+    ev.target.value="";
+    if(!f) return;
+    const rd=new FileReader();
+    rd.onload=()=>{
+      try{
+        const data=JSON.parse(String(rd.result).replace(/^\uFEFF/,""));
+        const r=importAltSheetJSONData(data, key);
+        if(r.kind==="character") toast("📂 Charakter aus JSON importiert.");
+        else toast("📂 "+r.count+" Bogenwerte importiert"
+          +(r.unknown?" ("+r.unknown+" unbekannte Felder ignoriert)":"")+".");
+      }catch(e){ toast("⚠ Import fehlgeschlagen: "+e.message); }
+    };
+    rd.onerror=()=>toast("⚠ Datei konnte nicht gelesen werden.");
+    rd.readAsText(f);
+  });
+  const reset=$("#btn-alt-import-reset");
+  if(reset) reset.addEventListener("click",()=>{
+    CPR.altSheetClearImport(key); save(); renderSheet();
+    toast("↺ Eingelesene Bogenwerte verworfen.");
+  });
+}
+
+/* JSON im Bogen-Screen einlesen: entweder kompletter Charakter-Export
+   oder die flachen Bogenwerte (CPR.altSheetImportValues). */
+function importAltSheetJSONData(data, key){
+  if(data && typeof data==="object" && !Array.isArray(data)
+    && data.method && data.role && CPR.ROLES[data.role]){
+    S=data;
+    S.presetChoices=S.presetChoices||{weapons:{},outfit:{},cyber:{}};
+    S.buys=S.buys||[]; S.skills=S.skills||{}; S.skillChoices=S.skillChoices||{};
+    S.lp=S.lp||{}; S.visited=S.visited||{}; S.stats=S.stats||{};
+    S.altSheetImports=S.altSheetImports||{};
+    if(!S.step) S.step="sheet";
+    const keys=typeof CPR.altSheetKeys==="function" ? CPR.altSheetKeys(S.role) : [];
+    if(keys.indexOf(key)>=0) S.sheetDesign=(key==="standard"?"standard":"alt");
+    else S.sheetDesign=keys.indexOf("standard")>=0 ? "standard" : "official";
+    save();
+    go("sheet");
+    return {kind:"character"};
+  }
+  const res=CPR.altSheetImportValues(key, data);
+  CPR.altSheetApplyImport(key, res.values);
+  save();
+  renderSheet();
+  return {kind:"values", count:Object.keys(res.values).length, unknown:res.unknown.length};
 }
 
 /* =============== Init =============== */
@@ -1726,6 +1780,7 @@ function init(){
   S.presetChoices=S.presetChoices||{weapons:{},outfit:{},cyber:{}};
   S.buys=S.buys||[]; S.skills=S.skills||{}; S.skillChoices=S.skillChoices||{};
   S.lp=S.lp||{}; S.visited=S.visited||{}; S.stats=S.stats||{};
+  S.altSheetImports=S.altSheetImports||{};
   S.sheetDesign=(S.sheetDesign==="alt"||S.sheetDesign==="standard")?S.sheetDesign:"official";
   $("#btn-dicelog").addEventListener("click",()=>$("#dicelog").classList.toggle("hidden"));
   $("#btn-dicelog-close").addEventListener("click",()=>$("#dicelog").classList.add("hidden"));

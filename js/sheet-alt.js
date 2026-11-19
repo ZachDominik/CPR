@@ -468,6 +468,25 @@
     if(cy.borg.length) check("BORGWARE CHECK1");
     if(cy.fw.length) check("FASHIONWARE CHECK1");
 
+    /* --- Per JSON eingelesene Bogenwerte (haben Vorrang) --- */
+    const imps = (S.altSheetImports && S.altSheetImports[key]) || null;
+    if(imps){
+      const typeOf = Object.create(null);
+      fields.forEach(f=>{ typeOf[f.name]=f.type; });
+      Object.keys(imps).forEach(n=>{
+        if(!has(n)) return;
+        const v = imps[n];
+        if(typeOf[n]==="checkbox"){
+          const on = (v===true || v===1 || v==="true" || v==="Yes" || v==="1");
+          const i = CHECKS.indexOf(n);
+          if(on && i<0) CHECKS.push(n);
+          else if(!on && i>=0) CHECKS.splice(i,1);
+        } else if(v!=null){
+          V[n] = String(v);
+        }
+      });
+    }
+
     return {values:V, checks:CHECKS, warns:WARNS};
   };
 
@@ -664,6 +683,48 @@
         values[f.name] = {value: String(els[f.name].value==null?"":els[f.name].value)};
     });
     return {data:data, values:values, checks:res.checks, warns:res.warns, key:key};
+  };
+
+  /* ---------- JSON-Import für Bogenwerte ---------- */
+  /* Akzeptiert das flache Exportformat {FELD: Wert, CHECK: true}
+     sowie {values:{...}} und {FELD:{value|checked:...}}. */
+  CPR.altSheetImportValues = function(key, raw){
+    const data = altGetData(key);
+    if(!data) throw new Error("Unbekanntes Bogen-Design.");
+    let src = raw;
+    if(src && typeof src==="object" && !Array.isArray(src)
+      && src.values && typeof src.values==="object" && !Array.isArray(src.values))
+      src = src.values;
+    if(!src || typeof src!=="object" || Array.isArray(src))
+      throw new Error("Das ist kein Bogenwerte-JSON.");
+
+    const known = Object.create(null);
+    (data.fields||[]).forEach(f=>{ known[f.name]=f.type; });
+    const out = {}, unknown = [];
+    Object.keys(src).forEach(n=>{
+      if(!known[n]){ unknown.push(n); return; }
+      let v = src[n];
+      if(v && typeof v==="object" && !Array.isArray(v)){
+        if(Object.prototype.hasOwnProperty.call(v,"checked")) v = !!v.checked;
+        else if(Object.prototype.hasOwnProperty.call(v,"value")) v = v.value;
+        else v = "";
+      }
+      out[n] = v;
+    });
+    if(!Object.keys(out).length)
+      throw new Error("Keine passenden Bogenfelder in der JSON gefunden.");
+    return {values:out, unknown:unknown};
+  };
+  CPR.altSheetApplyImport = function(key, values){
+    if(!S.altSheetImports) S.altSheetImports = {};
+    S.altSheetImports[key] = values || {};
+  };
+  CPR.altSheetClearImport = function(key){
+    if(S.altSheetImports) delete S.altSheetImports[key];
+  };
+  CPR.altSheetHasImport = function(key){
+    return !!(S.altSheetImports && S.altSheetImports[key]
+      && Object.keys(S.altSheetImports[key]).length);
   };
 
   /* Aktuelle Bogenwerte als JSON (ohne berechnete Felder) */

@@ -487,6 +487,46 @@
       &&stdPdfForm.getTextField("CON BASE").getText()===String(6+6))
       ok("Standard-PDF: NAME/BASE vorbefuellt");
     else fail("Standard-PDF NAME/BASE");
+
+    /* 12f. JSON-Import fuer die getrennten Boegen */
+    const impParsed=CPR.altSheetImportValues("standard",
+      {NAME:"Kiro-Edit","CON BASE":"99",UNBEKANNT:"x"});
+    if(impParsed.values.NAME==="Kiro-Edit"&&impParsed.values["CON BASE"]==="99"
+      &&impParsed.unknown.length===1)
+      ok("JSON-Import: Werte erkannt, unbekannte Felder ignoriert");
+    else fail("JSON-Import Parsing");
+    let impRejected=true;
+    try{ CPR.altSheetImportValues("standard", [1,2,3]); impRejected=false; }catch(e){}
+    try{ CPR.altSheetImportValues("standard", {"NOPE":1}); impRejected=false; }catch(e){}
+    if(impRejected) ok("JSON-Import: ungueltige Daten abgelehnt");
+    else fail("JSON-Import Validierung");
+    CPR.altSheetApplyImport("standard", impParsed.values);
+    const impValues=CPR.altSheetValues("netrunner", null, "standard");
+    if(impValues.values.NAME==="Kiro-Edit"&&impValues.values["CON BASE"]==="99")
+      ok("JSON-Import: eingelesene Werte haben Vorrang");
+    else fail("JSON-Import Vorrang: "+impValues.values.NAME+"/"+impValues.values["CON BASE"]);
+    S.sheetDesign="standard"; go("sheet");
+    const impNameEl=document.querySelector('#alt-sheet-host input[name="NAME"]');
+    if(impNameEl&&impNameEl.value==="Kiro-Edit"
+      &&!!document.querySelector("#btn-alt-import")
+      &&!!document.querySelector("#btn-alt-import-reset"))
+      ok("JSON-Import: Button + DOM-Wert");
+    else fail("JSON-Import DOM/Button");
+    const impAll=CPR.altSheetAllValues("netrunner","standard");
+    if(impAll.values.NAME.value==="Kiro-Edit"&&impAll.values["CON BASE"].value==="99")
+      ok("JSON-Import: PDF-Werte uebernommen");
+    else fail("JSON-Import PDF-Werte");
+    const charData=JSON.parse(JSON.stringify(S));
+    charData.name="Kiro-Neu";
+    const impChar=importAltSheetJSONData(charData,"standard");
+    if(impChar.kind==="character"&&S.name==="Kiro-Neu"&&S.sheetDesign==="standard")
+      ok("JSON-Import: kompletter Charakter-Export");
+    else fail("JSON-Import Charakter");
+    CPR.altSheetClearImport("standard");
+    const cleared=CPR.altSheetValues("netrunner", null, "standard");
+    if(!CPR.altSheetHasImport("standard")&&cleared.values.NAME==="Kiro-Neu")
+      ok("JSON-Import: verwerfen stellt Charakterwerte wieder her");
+    else fail("JSON-Import verwerfen");
     S.role="solo"; /* fuer Save/Load-Test unten */
 
     /* 13. Save/Load rundet */
