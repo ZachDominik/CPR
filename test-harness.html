@@ -527,6 +527,54 @@
     if(!CPR.altSheetHasImport("standard")&&cleared.values.NAME==="Kiro-Neu")
       ok("JSON-Import: verwerfen stellt Charakterwerte wieder her");
     else fail("JSON-Import verwerfen");
+
+    /* 12g. Automatische Erkennung, zu welchem Bogen ein JSON gehoert */
+    const detStd=CPR.altSheetDetect({NAME:"Kiro","CON BASE":"12"}, "solo");
+    const detSolo=CPR.altSheetDetect({NAME1:"Vex","ARMOR 2":"Light Armorjack"}, "standard");
+    const detMed=CPR.altSheetDetect({"COST 19":"100","ARMOR 2":"Light Armorjack"}, "standard");
+    if(detStd&&detStd.key==="standard"&&detSolo&&detSolo.key==="solo"
+      &&detMed&&detMed.key==="medtech")
+      ok("JSON-Erkennung: Standard/Solo/Medtech an Feldnamen");
+    else fail("JSON-Erkennung: "+(detStd&&detStd.key)+"/"+(detSolo&&detSolo.key)
+      +"/"+(detMed&&detMed.key));
+    const detMeta=CPR.altSheetDetect({_sheet:"solo",NAME1:"Vex"});
+    if(detMeta&&detMeta.key==="solo"&&detMeta.fromMeta)
+      ok("JSON-Erkennung: _sheet-Metadaten");
+    else fail("JSON-Erkennung Metadaten");
+    if(CPR.altSheetDetect({foo:"bar"})===null)
+      ok("JSON-Erkennung: fremdes JSON abgelehnt");
+    else fail("JSON-Erkennung fremdes JSON");
+
+    /* Solo-Bogenwerte ueber den Import des offiziellen Bogens */
+    S=freshState("complete"); S.role="solo"; S.name="Vex"; S.sheetDesign="official";
+    const impAuto=importAnyJSON({NAME1:"Vex-Import","ARMOR 2":"Light Armorjack"}, importHint());
+    const autoVals=CPR.altSheetValues("solo", null, "solo");
+    if(impAuto.kind==="values"&&impAuto.key==="solo"&&S.sheetDesign==="alt"
+      &&autoVals.values.NAME1==="Vex-Import"
+      &&autoVals.values["ARMOR 2"]==="Light Armorjack")
+      ok("JSON-Erkennung: Solo-JSON ueber offiziellen Import");
+    else fail("Auto-Import Solo: "+(impAuto&&impAuto.key)+"/"+S.sheetDesign);
+    const roundTrip=CPR.altSheetCurrentJSON("solo","solo");
+    const detRound=CPR.altSheetDetect(roundTrip, "standard");
+    if(roundTrip._sheet==="solo"&&detRound&&detRound.key==="solo")
+      ok("JSON-Erkennung: eigener Export enthaelt _sheet");
+    else fail("JSON-Erkennung Roundtrip: "+(detRound&&detRound.key));
+    CPR.altSheetClearImport("solo");
+
+    /* Standard-Bogenwerte ueber den Import des offiziellen Bogens */
+    S=freshState("complete"); S.role="netrunner"; S.sheetDesign="official";
+    const impStdAuto=importAnyJSON({NAME:"Kiro-Auto","CON BASE":"99"}, "solo");
+    if(impStdAuto.kind==="values"&&impStdAuto.key==="standard"
+      &&S.sheetDesign==="standard")
+      ok("JSON-Erkennung: Standard-JSON stellt Design um");
+    else fail("Auto-Import Standard: "+(impStdAuto&&impStdAuto.key)+"/"+S.sheetDesign);
+    CPR.altSheetClearImport("standard");
+
+    /* Bogenwerte, die die Rolle gar nicht hat, werden abgelehnt */
+    let autoRejected=false;
+    try{ importAnyJSON({NAME1:"X"}, "standard"); }catch(e){ autoRejected=true; }
+    if(autoRejected) ok("JSON-Erkennung: fremder Bogen wird abgelehnt");
+    else fail("JSON-Erkennung fremder Bogen");
     S.role="solo"; /* fuer Save/Load-Test unten */
 
     /* 13. Save/Load rundet */

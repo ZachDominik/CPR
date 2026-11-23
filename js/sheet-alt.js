@@ -702,6 +702,7 @@
     (data.fields||[]).forEach(f=>{ known[f.name]=f.type; });
     const out = {}, unknown = [];
     Object.keys(src).forEach(n=>{
+      if(n.charAt(0)==="_") return; // Metadaten (_sheet/_role)
       if(!known[n]){ unknown.push(n); return; }
       let v = src[n];
       if(v && typeof v==="object" && !Array.isArray(v)){
@@ -727,15 +728,106 @@
       && Object.keys(S.altSheetImports[key]).length);
   };
 
+  /* ---------- Erkennung: zu welchem Bogen gehört eine JSON? ---------- */
+  /* Vergleicht die Feldnamen der JSON mit den Feldnamen aller eingebetteten
+     Bögen. So klappt der Import auch, wenn z. B. ein Solo-Bogen-JSON über
+     den Import-Button des offiziellen/Standard-Bogens eingelesen wird. */
+  var _altNameSets = null;
+  function altNameSets(){
+    if(_altNameSets) return _altNameSets;
+    const sets = Object.create(null);
+    ALT_KEYS.forEach(k=>{
+      const d = altGetData(k);
+      if(!d) return;
+      const m = Object.create(null);
+      (d.fields||[]).forEach(f=>{ m[f.name]=true; });
+      sets[k] = m;
+    });
+    _altNameSets = sets;
+    return sets;
+  }
+  CPR.altSheetDetect = function(raw, hintKey){
+    if(!raw || typeof raw!=="object" || Array.isArray(raw)) return null;
+    let src = raw;
+    if(raw.values && typeof raw.values==="object" && !Array.isArray(raw.values))
+      src = raw.values;
+    const names = Object.keys(src);
+    if(!names.length) return null;
+
+    const sets = altNameSets();
+    const scores = [];
+    ALT_KEYS.forEach(k=>{
+      const mine = sets[k];
+      if(!mine) return;
+      let hits=0, exclusive=0;
+      names.forEach(n=>{
+        if(!mine[n]) return;
+        hits++;
+        let only=true;
+        ALT_KEYS.forEach(k2=>{
+          if(k2!==k && sets[k2] && sets[k2][n]) only=false;
+        });
+        if(only) exclusive++;
+      });
+      scores.push({key:k, hits:hits, exclusive:exclusive});
+    });
+    if(!scores.length) return null;
+
+    /* Explizite Metadaten (neuere Exporte) haben Vorrang. */
+    const candidates = [raw.__sheet, raw._sheet, raw.sheet, src.__sheet, src._sheet, src.sheet];
+    let meta = null;
+    for(let i=0;i<candidates.length;i++){
+      if(typeof candidates[i]==="string" && altHasSheet(candidates[i])
+        && sets[candidates[i]]){ meta=candidates[i]; break; }
+    }
+
+    /* Rollenname im JSON ("Solo"/"Medtech", z. B. Feld "role" des
+       Standard-Bogens) hilft bei Solo/Medtech-Mehrdeutigkeit. */
+    const roleText = String(src.role||src.role1||"").toLowerCase();
+    const roleKey = roleText.indexOf("medtech")>=0 ? "medtech"
+      : roleText.indexOf("solo")>=0 ? "solo" : null;
+
+    const sorted = scores.slice().sort((a,b)=>{
+      if(b.hits!==a.hits) return b.hits-a.hits;
+      if(b.exclusive!==a.exclusive) return b.exclusive-a.exclusive;
+      if(a.key===roleKey) return -1;
+      if(b.key===roleKey) return 1;
+      if(typeof S!=="undefined" && S && a.key===S.role) return -1;
+      if(typeof S!=="undefined" && S && b.key===S.role) return 1;
+      if(a.key===hintKey) return -1;
+      if(b.key===hintKey) return 1;
+      return 0;
+    });
+    const best = meta ? scores.filter(s=>s.key===meta)[0] : sorted[0];
+    if(!best || best.hits<1) return null;
+    const second = sorted.filter(s=>s.key!==best.key)[0] || null;
+    return {
+      key: best.key,
+      hits: best.hits,
+      exclusive: best.exclusive,
+      scores: scores,
+      fromMeta: !!meta,
+      ambiguous: !!(second && second.hits===best.hits && second.exclusive===best.exclusive)
+    };
+  };
+
   /* Aktuelle Bogenwerte als JSON (ohne berechnete Felder) */
   CPR.altSheetCurrentJSON = function(role, sheetKey){
     const key = sheetKey || altKeyForRole(role, "alt");
     const data = altGetData(key);
     if(!data) return null;
     const cur = _current && _current.role===role && _current.key===key ? _current : null;
+    /* _sheet/_role sind nur Hinweise für den Import und werden von
+       altSheetImportValues ignoriert. */
+    function withMeta(values){
+      const o = {"_sheet":key};
+      if(role) o["_role"]=role;
+      Object.keys(values||{}).forEach(n=>{ o[n]=values[n]; });
+      return o;
+    }
     if(!cur){
       const res = CPR.altSheetValues(role, null, key);
-      return res ? res.values : {};
+      return withMeta(res ? res.values : {});
     }
     const calcTargets = Object.create(null);
     (data.calculations||[]).forEach(c=>{ calcTargets[c.target]=true; });

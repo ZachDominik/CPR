@@ -70,6 +70,17 @@ Werte haben Vorrang vor den aus dem Charakter berechneten und werden mit
 akzeptiert und lädt den ganzen Charakter neu. Mit **„↺ Import verwerfen“**
 werden die eingelesenen Werte wieder entfernt.
 
+**Automatische Erkennung:** Beide Import-Buttons (offizieller Bogen und
+getrennte Bögen) nehmen jedes unterstützte JSON an. Anhand der Feldnamen wird
+erkannt, ob es sich um einen Charakter-Export oder um Solo-, Medtech- oder
+Standard-Bogenwerte handelt – auch wenn z. B. ein Solo-Bogen-JSON über den
+Import des offiziellen Bogens eingelesen wird. Der passende Bogen wird dann
+automatisch geöffnet. Neuere Exporte enthalten zusätzlich die Hinweise
+`_sheet`/`_role`, die diese Erkennung eindeutig machen; ältere Dateien ohne
+diese Felder funktionieren weiterhin. Passt ein Bogen nicht zur aktuellen
+Rolle (z. B. Solo-JSON bei einem Netrunner), wird der Import mit Hinweis
+abgelehnt.
+
 Was wohin gefüllt wird:
 
 - Identität (Handle, Rolle, Role Ability + Rang), alle STATs inkl.
@@ -109,18 +120,18 @@ js/sheet-alt-pdf.js – erzeugt daraus ein vorbefülltes, ausfüllbares AcroForm
 js/vendor/pdf-lib.min.js – pdf-lib 1.17.1 (MIT), UMD-Bundle, offline
 cyberpunk_sheets_getrennt/ – Quelldaten Solo/Medtech (Bilder + Feld-JSON)
 cyberpunk_standard_sheet_getrennt/ – Quelldaten Standard-Sheet (Bilder + Feld-JSON)
-test-harness.html – 99 automatisierte Tests (Regressionsschutz)
+test-harness.html – 106 automatisierte Tests (Regressionsschutz)
 ```
 
 ## Tests
 
-`test-harness.html` im Browser öffnen – die 99 Tests laufen automatisch
+`test-harness.html` im Browser öffnen – die 106 Tests laufen automatisch
 (alle drei Methoden komplett, Budgetrechnungen, Humanity, Preset-Auswahl,
 Shop-Käufe, Save/Load, PDF-Feld-Mapping inkl. eingebettetem Bogen sowie
 alternativer Solo-/Medtech-Bogen und Standard-Sheet für alle Rollen inkl.
-Verfügbarkeits-Fallback, JSON-Import und PDF-Erzeugung). Kopfzeile muss am
-Ende **„99 PASS / 0 FAIL“** zeigen. Headless-Check (PDF-Erzeugung braucht
-etwas Zeit):
+Verfügbarkeits-Fallback, JSON-Import inkl. automatischer Bogen-Erkennung und
+PDF-Erzeugung). Kopfzeile muss am Ende **„106 PASS / 0 FAIL“** zeigen.
+Headless-Check (PDF-Erzeugung braucht etwas Zeit):
 
 ```powershell
 & "C:\Program Files\Google\Chrome\Application\chrome.exe" --headless=new `

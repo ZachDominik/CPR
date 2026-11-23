@@ -1650,20 +1650,27 @@ function renderSheet(){
   });
   $("#btn-import").addEventListener("click",()=>$("#inp-import").click());
   $("#inp-import").addEventListener("change",(ev)=>{
-    const f=ev.target.files[0]; if(!f) return;
+    const f=ev.target.files[0];
+    ev.target.value="";
+    if(!f) return;
     const rd=new FileReader();
     rd.onload=()=>{
       try{
-        const data=JSON.parse(rd.result);
-        if(!data||!data.method||!data.role||!CPR.ROLES[data.role]) throw new Error("Das sieht nach keinem Charakter aus.");
-        S=data; save();
-        toast("📂 Charakter importiert!");
-        const steps=["start","role","lifepath","stats","derived","skills","equip","shop","sheet"];
-        go(steps.includes(S.step)?S.step:"sheet");
+        const data=JSON.parse(String(rd.result).replace(/^\uFEFF/,""));
+        const r=importAnyJSON(data, importHint());
+        if(r.kind==="character"){
+          toast("📂 Charakter importiert!");
+          const steps=["start","role","lifepath","stats","derived","skills","equip","shop","sheet"];
+          go(steps.includes(S.step)?S.step:"sheet");
+        }else{
+          toast("📂 "+r.count+" Bogenwerte für "+altSheetLabel(r.key)
+            +" importiert – Design umgestellt.");
+          go("sheet");
+        }
       }catch(e){ toast("⚠ Import fehlgeschlagen: "+e.message); }
     };
+    rd.onerror=()=>toast("⚠ Datei konnte nicht gelesen werden.");
     rd.readAsText(f);
-    ev.target.value="";
   });
   bindSheetDesign();
 }
@@ -1733,7 +1740,7 @@ function renderAltSheetScreen(key){
         const data=JSON.parse(String(rd.result).replace(/^\uFEFF/,""));
         const r=importAltSheetJSONData(data, key);
         if(r.kind==="character") toast("📂 Charakter aus JSON importiert.");
-        else toast("📂 "+r.count+" Bogenwerte importiert"
+        else toast("📂 "+r.count+" Bogenwerte für "+altSheetLabel(r.key)+" importiert"
           +(r.unknown?" ("+r.unknown+" unbekannte Felder ignoriert)":"")+".");
       }catch(e){ toast("⚠ Import fehlgeschlagen: "+e.message); }
     };
@@ -1747,29 +1754,78 @@ function renderAltSheetScreen(key){
   });
 }
 
-/* JSON im Bogen-Screen einlesen: entweder kompletter Charakter-Export
-   oder die flachen Bogenwerte (CPR.altSheetImportValues). */
-function importAltSheetJSONData(data, key){
-  if(data && typeof data==="object" && !Array.isArray(data)
-    && data.method && data.role && CPR.ROLES[data.role]){
-    S=data;
-    S.presetChoices=S.presetChoices||{weapons:{},outfit:{},cyber:{}};
-    S.buys=S.buys||[]; S.skills=S.skills||{}; S.skillChoices=S.skillChoices||{};
-    S.lp=S.lp||{}; S.visited=S.visited||{}; S.stats=S.stats||{};
-    S.altSheetImports=S.altSheetImports||{};
-    if(!S.step) S.step="sheet";
-    const keys=typeof CPR.altSheetKeys==="function" ? CPR.altSheetKeys(S.role) : [];
-    if(keys.indexOf(key)>=0) S.sheetDesign=(key==="standard"?"standard":"alt");
-    else S.sheetDesign=keys.indexOf("standard")>=0 ? "standard" : "official";
-    save();
-    go("sheet");
+/* ---------- JSON-Import mit automatischer Erkennung ---------- */
+function altSheetLabel(key){
+  return key==="standard" ? "Standard-Sheet"
+    : key==="solo" ? "Solo-Sheet"
+    : key==="medtech" ? "Medtech-Sheet" : "Bogen";
+}
+/* Offizieller Import-Hinweis: aktuell gewähltes Design, sonst der
+   rollenspezifische Bogen, sonst das Standard-Sheet. */
+function importHint(){
+  const k=currentAltSheetKey();
+  if(k) return k;
+  if(typeof CPR.altSheetKeyFor==="function" && S.role)
+    return CPR.altSheetKeyFor(S.role,"alt");
+  return null;
+}
+function looksLikeCharacterJSON(data){
+  return !!(data && typeof data==="object" && !Array.isArray(data)
+    && ["streetrat","edgerunner","complete"].indexOf(data.method)>=0
+    && (data.role==null || !!CPR.ROLES[data.role])
+    && (data.v!=null || data.stats || data.lp || data.buys || data.skills));
+}
+function loadCharacterFromJSON(data, preferKey){
+  S=data;
+  S.presetChoices=S.presetChoices||{weapons:{},outfit:{},cyber:{}};
+  S.buys=S.buys||[]; S.skills=S.skills||{}; S.skillChoices=S.skillChoices||{};
+  S.lp=S.lp||{}; S.visited=S.visited||{}; S.stats=S.stats||{};
+  S.altSheetImports=S.altSheetImports||{};
+  if(!S.step) S.step="sheet";
+  const keys=typeof CPR.altSheetKeys==="function" ? CPR.altSheetKeys(S.role) : [];
+  if(preferKey && keys.indexOf(preferKey)>=0){
+    S.sheetDesign=(preferKey==="standard"?"standard":"alt");
+  }else{
+    if(["official","alt","standard"].indexOf(S.sheetDesign)<0) S.sheetDesign="official";
+    if(S.sheetDesign==="standard" && keys.indexOf("standard")<0) S.sheetDesign="official";
+    if(S.sheetDesign==="alt" && !(S.role && keys.indexOf(S.role)>=0)) S.sheetDesign="official";
+  }
+  save();
+}
+/* Nimmt jedes unterstützte JSON an: Charakter-Export oder Bogenwerte
+   (Solo/Medtech/Standard). Der passende Bogen wird automatisch erkannt. */
+function importAnyJSON(data, hintKey){
+  if(looksLikeCharacterJSON(data)){
+    loadCharacterFromJSON(data, hintKey);
     return {kind:"character"};
+  }
+  if(typeof CPR.altSheetDetect!=="function")
+    throw new Error("Die Bogen-Erkennung ist nicht geladen.");
+  const det=CPR.altSheetDetect(data, hintKey);
+  if(!det)
+    throw new Error("Das ist weder ein Charakter-Export noch ein Bogenwerte-JSON.");
+  const key=det.key;
+  const keys=typeof CPR.altSheetKeys==="function" ? CPR.altSheetKeys(S.role) : [];
+  if(keys.indexOf(key)<0){
+    const roleName=(S.role&&CPR.ROLES[S.role]) ? CPR.ROLES[S.role].name : "dieser Charakter";
+    throw new Error("Das JSON gehört zum "+altSheetLabel(key)
+      +" – dafür gibt es bei "+roleName+" keinen passenden Bogen.");
   }
   const res=CPR.altSheetImportValues(key, data);
   CPR.altSheetApplyImport(key, res.values);
+  S.sheetDesign=(key==="standard"?"standard":"alt");
   save();
-  renderSheet();
-  return {kind:"values", count:Object.keys(res.values).length, unknown:res.unknown.length};
+  return {kind:"values", key:key, count:Object.keys(res.values).length,
+    unknown:res.unknown.length, switched:key!==hintKey, detected:det};
+}
+
+/* JSON im Bogen-Screen einlesen: Charakter-Export oder Bogenwerte.
+   Erkennt den Bogen automatisch und stellt das Design passend um. */
+function importAltSheetJSONData(data, key){
+  const r=importAnyJSON(data, key);
+  if(r.kind==="character") go("sheet");
+  else renderSheet();
+  return r;
 }
 
 /* =============== Init =============== */
